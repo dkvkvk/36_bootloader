@@ -353,8 +353,10 @@ static void uart_rx_task(void *arg)
  */
 static void record_task(void *arg)
 {
-    /* 分配双倍大小缓冲区用于立体声输入 */
-    uint8_t *buf = heap_caps_malloc(AUDIO_FRAME_SIZE * 2, MALLOC_CAP_DMA);
+    /* 增大缓冲区以减少串口发送次数，降低数据丢失 */
+    #define RECORD_BUF_SIZE  2048  /* 每次读取的立体声数据大小 */
+    
+    uint8_t *buf = heap_caps_malloc(RECORD_BUF_SIZE, MALLOC_CAP_DMA);
     if (!buf) {
         ESP_LOGE(TAG, "录音缓冲区分配失败");
         vTaskDelete(NULL);
@@ -366,22 +368,26 @@ static void record_task(void *arg)
     while (g_running) {
         if (g_mode == MODE_RECORDING) {
             /* 从I2S读取音频数据 (立体声: 左右声道交替) */
-            size_t bytes_read = i2s_rx_read(buf, AUDIO_FRAME_SIZE * 2); /* 读取双倍数据因为是立体声 */
+            size_t bytes_read = i2s_rx_read(buf, RECORD_BUF_SIZE);
             if (bytes_read > 0) {
-                /* 将立体声转换为单声道（只取左声道） */
+                /* 将立体声转换为单声道（取左右声道平均值） */
                 int16_t *stereo = (int16_t *)buf;
                 int16_t *mono = (int16_t *)buf;  /* 原地转换 */
-                size_t stereo_samples = bytes_read / sizeof(int16_t) / 2;  /* 立体声采样数 */
+                size_t stereo_samples = bytes_read / sizeof(int16_t) / 2;
                 
                 for (size_t i = 0; i < stereo_samples; i++) {
-                    /* 只取左声道，或者取左右声道平均值 */
-                    /* mono[i] = stereo[i * 2]; */  /* 只取左声道 */
-                    mono[i] = (stereo[i * 2] + stereo[i * 2 + 1]) / 2;  /* 左右声道平均 */
+                    mono[i] = (stereo[i * 2] + stereo[i * 2 + 1]) / 2;
                 }
                 
                 size_t mono_bytes = stereo_samples * sizeof(int16_t);
-                /* 通过串口发送单声道数据 */
-                uart_audio_send_frame(CMD_AUDIO_DATA, buf, mono_bytes);
+                
+                /* 分包发送以避免单包过大 */
+                size_t offset = 0;
+                while (offset < mono_bytes) {
+                    size_t chunk = (mono_bytes - offset > 512) ? 512 : (mono_bytes - offset);
+                    uart_audio_send_frame(CMD_AUDIO_DATA, buf + offset, chunk);
+                    offset += chunk;
+                }
             }
         } else {
             vTaskDelay(pdMS_TO_TICKS(10));

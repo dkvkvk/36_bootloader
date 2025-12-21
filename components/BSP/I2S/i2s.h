@@ -39,7 +39,7 @@
 #define I2S_DO_IO               (GPIO_NUM_10)               /* ES8388_SDOUT */
 #define I2S_DI_IO               (GPIO_NUM_14)               /* ES8388_SDIN */
 #define IS2_MCLK_IO             (GPIO_NUM_3)                /* ES8388_MCLK */
-#define SAMPLE_RATE             (16000)                     /* 采样率: 16kHz */
+#define SAMPLE_RATE             (8000)                      /* 采样率: 8kHz (适配230400波特率) */
 
 /* 声明函数 */
 esp_err_t i2s_init(void);                                           /* I2S初始化 */

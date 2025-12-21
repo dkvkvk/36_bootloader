@@ -21,7 +21,7 @@
 #include "i2s.h"
 
 
-/* I2S默认配置 */
+/* I2S默认配置 - 增大DMA缓冲区以减少录音丢失 */
 #define I2S_CONFIG_DEFAULT() { \
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX),      \
     .sample_rate = SAMPLE_RATE,                                             \
@@ -29,8 +29,8 @@
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,                           \
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,                      \
     .intr_alloc_flags = 0,                                                  \
-    .dma_buf_count = 8,                                                     \
-    .dma_buf_len = 256,                                                     \
+    .dma_buf_count = 16,                                                    \
+    .dma_buf_len = 512,                                                     \
     .use_apll = false                                                       \
 }
 

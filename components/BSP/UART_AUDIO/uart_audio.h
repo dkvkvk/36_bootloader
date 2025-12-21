@@ -17,14 +17,14 @@
 #include "driver/uart.h"
 
 /* 音频配置 */
-#define AUDIO_SAMPLE_RATE       16000           /* 采样率: 16kHz */
+#define AUDIO_SAMPLE_RATE       8000            /* 采样率: 8kHz (降低以适配230400波特率) */
 #define AUDIO_BITS_PER_SAMPLE   16              /* 位宽: 16bit */
 #define AUDIO_CHANNELS          1               /* 声道: 单声道 */
 #define AUDIO_FRAME_SIZE        512             /* 每帧大小(字节) */
 
 /* 串口配置 */
-#define UART_AUDIO_BAUD_RATE    230400          /* 波特率 (降低以减少传输错误) */
-#define UART_BUF_SIZE           2048            /* 串口缓冲区大小 */
+#define UART_AUDIO_BAUD_RATE    230400          /* 波特率 */
+#define UART_BUF_SIZE           4096            /* 串口缓冲区大小 */
 
 /* 协议帧定义 */
 #define FRAME_HEADER_0          0xAA            /* 帧头第一字节 */
