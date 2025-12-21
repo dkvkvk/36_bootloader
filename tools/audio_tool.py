@@ -61,7 +61,7 @@ FRAME_HEADER = bytes([0xAA, 0x55])
 
 
 class AudioSerialTool:
-    def __init__(self, port, baudrate=921600):
+    def __init__(self, port, baudrate=230400):
         self.port = port
         self.baudrate = baudrate
         self.serial = None
@@ -368,7 +368,7 @@ class AudioSerialTool:
 def main():
     parser = argparse.ArgumentParser(description='ESP32-S3 音频串口传输工具')
     parser.add_argument('port', help='串口名称 (如 COM3 或 /dev/ttyUSB0)')
-    parser.add_argument('--baud', type=int, default=921600, help='波特率 (默认: 921600)')
+    parser.add_argument('--baud', type=int, default=230400, help='波特率 (默认: 230400)')
     
     subparsers = parser.add_subparsers(dest='command', help='命令')
     

@@ -23,7 +23,7 @@
 #define AUDIO_FRAME_SIZE        512             /* 每帧大小(字节) */
 
 /* 串口配置 */
-#define UART_AUDIO_BAUD_RATE    921600          /* 波特率 */
+#define UART_AUDIO_BAUD_RATE    230400          /* 波特率 (降低以减少传输错误) */
 #define UART_BUF_SIZE           2048            /* 串口缓冲区大小 */
 
 /* 协议帧定义 */

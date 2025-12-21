@@ -45,7 +45,7 @@ idf.py set-target esp32s3
 idf.py build
 
 # 烧录并监视
-idf.py -p COM端口 flash monitor
+idf.py -p COM7 flash monitor
 ```
 
 ### PC 端工具
@@ -57,16 +57,16 @@ idf.py -p COM端口 flash monitor
 pip install pyserial
 
 # 录音 10 秒
-python tools/audio_tool.py COM端口 record -d 10 -o output.wav
+python tools/audio_tool.py COM9 record -d 10 -o output.wav
 
 # 播放 WAV 文件
-python tools/audio_tool.py COM端口 play input.wav
+python tools/audio_tool.py COM9 play input.wav
 
 # 播放 MP3 文件 (ESP32 硬件解码)
-python tools/audio_tool.py COM端口 play input.mp3
+python tools/audio_tool.py COM9 play input.mp3
 
 # 监听模式（按开发板按键控制录音）
-python tools/audio_tool.py COM端口 listen
+python tools/audio_tool.py COM9 listen
 
 # 握手测试
 python tools/audio_tool.py COM9 handshake
@@ -134,5 +134,10 @@ python tools/audio_tool.py COM9 handshake
 - `espressif/esp_tinyusb ^1` - USB 支持
 
 ## License
+
+idf.py fullclean
+idf.py build
+idf.py -p COM7 flash monitor
+
 
 Copyright © 2025

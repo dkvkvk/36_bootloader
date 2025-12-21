@@ -99,10 +99,12 @@ static void process_frame(uint8_t cmd, const uint8_t *data, uint16_t len)
             ESP_LOGI(TAG, "收到开始录音命令");
             if (g_mode == MODE_IDLE) {
                 g_mode = MODE_RECORDING;
-                /* 配置ES8388为录音模式 */
-                es8388_adda_cfg(0, 1);      /* ADC开启 */
-                es8388_input_cfg(0);        /* 输入通道1 */
-                es8388_mic_gain(8);         /* MIC增益 */
+                /* 配置ES8388为录音模式 (参考备份项目) */
+                es8388_adda_cfg(1, 1);      /* 打开DAC打开ADC */
+                es8388_input_cfg(0);        /* 打开输入通道0 */
+                es8388_mic_gain(8);         /* MIC增益设置为最大 (8 = 24dB) */
+                es8388_output_cfg(1, 1);    /* DAC选择通道输出 */
+                es8388_sai_cfg(0, 3);       /* 飞利浦标准,16位数据长度 */
                 i2s_trx_start();
             }
             /* 发送应答 */
@@ -166,16 +168,30 @@ static void process_frame(uint8_t cmd, const uint8_t *data, uint16_t len)
                     /* MP3 格式：先解码再播放 */
                     mp3_decoder_feed(data, len);
                     
-                    /* 尝试获取解码后的 PCM 数据 */
-                    int sample_rate = 0, channels = 0;
-                    int samples = mp3_decoder_get_pcm((int16_t *)g_audio_buf, 
-                                                       FRAME_MAX_DATA_SIZE / sizeof(int16_t), 
-                                                       &sample_rate, &channels);
+                    /* 持续解码直到无法获取更多 PCM 数据 */
+                    static int last_sample_rate = 0;
+                    int decode_count = 0;
                     
-                    if (samples > 0) {
-                        /* 根据解码的声道数计算输出 */
-                        size_t pcm_bytes = samples * channels * sizeof(int16_t);
+                    while (decode_count < 3) {  /* 1024字节最多解码约2-3帧 */
+                        int sample_rate = 0, channels = 0;
+                        int samples = mp3_decoder_get_pcm((int16_t *)g_audio_buf, 
+                                                           FRAME_MAX_DATA_SIZE / sizeof(int16_t), 
+                                                           &sample_rate, &channels);
                         
+                        if (samples <= 0) {
+                            break;  /* 没有更多解码数据 */
+                        }
+                        
+                        decode_count++;
+                        
+                        /* 如果采样率变化，动态更新 I2S 配置 */
+                        if (sample_rate > 0 && sample_rate != last_sample_rate) {
+                            ESP_LOGI(TAG, "设置 I2S 采样率: %d Hz", sample_rate);
+                            i2s_set_samplerate_bits_sample(sample_rate, 16);
+                            last_sample_rate = sample_rate;
+                        }
+                        
+                        /* 根据解码的声道数计算输出 */
                         if (channels == 1) {
                             /* 单声道转立体声 */
                             int16_t *mono = (int16_t *)g_audio_buf;
@@ -187,16 +203,16 @@ static void process_frame(uint8_t cmd, const uint8_t *data, uint16_t len)
                             i2s_tx_write((uint8_t *)stereo_buf, samples * 4);
                         } else {
                             /* 立体声直接输出 */
+                            size_t pcm_bytes = samples * channels * sizeof(int16_t);
                             i2s_tx_write(g_audio_buf, pcm_bytes);
                         }
-                        
-                        /* 调试：每50帧打印一次 */
-                        static uint32_t mp3_frame_count = 0;
-                        mp3_frame_count++;
-                        if (mp3_frame_count % 50 == 1) {
-                            ESP_LOGI(TAG, "MP3帧 #%lu: %d采样, %dHz, %d声道", 
-                                     mp3_frame_count, samples, sample_rate, channels);
-                        }
+                    }
+                    
+                    /* 调试：每50帧打印一次 */
+                    static uint32_t mp3_frame_count = 0;
+                    mp3_frame_count++;
+                    if (mp3_frame_count % 50 == 1) {
+                        ESP_LOGI(TAG, "MP3数据包 #%lu: 输入%d字节", mp3_frame_count, len);
                     }
                 } else {
                     /* PCM 格式：直接播放 */
@@ -337,7 +353,8 @@ static void uart_rx_task(void *arg)
  */
 static void record_task(void *arg)
 {
-    uint8_t *buf = heap_caps_malloc(AUDIO_FRAME_SIZE, MALLOC_CAP_DMA);
+    /* 分配双倍大小缓冲区用于立体声输入 */
+    uint8_t *buf = heap_caps_malloc(AUDIO_FRAME_SIZE * 2, MALLOC_CAP_DMA);
     if (!buf) {
         ESP_LOGE(TAG, "录音缓冲区分配失败");
         vTaskDelete(NULL);
@@ -348,11 +365,23 @@ static void record_task(void *arg)
     
     while (g_running) {
         if (g_mode == MODE_RECORDING) {
-            /* 从I2S读取音频数据 */
-            size_t bytes_read = i2s_rx_read(buf, AUDIO_FRAME_SIZE);
+            /* 从I2S读取音频数据 (立体声: 左右声道交替) */
+            size_t bytes_read = i2s_rx_read(buf, AUDIO_FRAME_SIZE * 2); /* 读取双倍数据因为是立体声 */
             if (bytes_read > 0) {
-                /* 通过串口发送 */
-                uart_audio_send_frame(CMD_AUDIO_DATA, buf, bytes_read);
+                /* 将立体声转换为单声道（只取左声道） */
+                int16_t *stereo = (int16_t *)buf;
+                int16_t *mono = (int16_t *)buf;  /* 原地转换 */
+                size_t stereo_samples = bytes_read / sizeof(int16_t) / 2;  /* 立体声采样数 */
+                
+                for (size_t i = 0; i < stereo_samples; i++) {
+                    /* 只取左声道，或者取左右声道平均值 */
+                    /* mono[i] = stereo[i * 2]; */  /* 只取左声道 */
+                    mono[i] = (stereo[i * 2] + stereo[i * 2 + 1]) / 2;  /* 左右声道平均 */
+                }
+                
+                size_t mono_bytes = stereo_samples * sizeof(int16_t);
+                /* 通过串口发送单声道数据 */
+                uart_audio_send_frame(CMD_AUDIO_DATA, buf, mono_bytes);
             }
         } else {
             vTaskDelay(pdMS_TO_TICKS(10));
