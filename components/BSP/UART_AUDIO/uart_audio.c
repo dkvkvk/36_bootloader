@@ -266,11 +266,10 @@ static void process_frame(uint8_t cmd, const uint8_t *data, uint16_t len)
 }
 
 /**
- * @brief       串口接收任务
+ * @brief       串口接收任务 (优化版：批量读取)
  */
 static void uart_rx_task(void *arg)
 {
-    uint8_t byte;
     parse_state_t state = PARSE_HEADER_0;
     uint8_t cmd = 0;
     uint16_t data_len = 0;
@@ -278,69 +277,86 @@ static void uart_rx_task(void *arg)
     static uint8_t frame_data[FRAME_MAX_DATA_SIZE];
     uint8_t checksum_calc = 0;
     
-    ESP_LOGI(TAG, "串口接收任务启动");
+    /* 批量读取缓冲区 */
+    static uint8_t rx_buf[256];
+    int buf_idx = 0;
+    int buf_len = 0;
+    
+    ESP_LOGI(TAG, "串口接收任务启动 (批量读取模式)");
     
     while (g_running) {
-        int len = uart_read_bytes(g_uart_num, &byte, 1, pdMS_TO_TICKS(10));
-        if (len <= 0) continue;
+        /* 如果缓冲区已处理完，读取新数据 */
+        if (buf_idx >= buf_len) {
+            buf_len = uart_read_bytes(g_uart_num, rx_buf, sizeof(rx_buf), pdMS_TO_TICKS(10));
+            buf_idx = 0;
+            if (buf_len <= 0) {
+                buf_len = 0;
+                continue;
+            }
+        }
         
-        switch (state) {
-            case PARSE_HEADER_0:
-                if (byte == FRAME_HEADER_0) {
-                    state = PARSE_HEADER_1;
-                }
-                break;
-                
-            case PARSE_HEADER_1:
-                if (byte == FRAME_HEADER_1) {
-                    state = PARSE_CMD;
-                } else {
+        /* 处理缓冲区中的数据 */
+        while (buf_idx < buf_len) {
+            uint8_t byte = rx_buf[buf_idx++];
+            
+            switch (state) {
+                case PARSE_HEADER_0:
+                    if (byte == FRAME_HEADER_0) {
+                        state = PARSE_HEADER_1;
+                    }
+                    break;
+                    
+                case PARSE_HEADER_1:
+                    if (byte == FRAME_HEADER_1) {
+                        state = PARSE_CMD;
+                    } else {
+                        state = PARSE_HEADER_0;
+                    }
+                    break;
+                    
+                case PARSE_CMD:
+                    cmd = byte;
+                    checksum_calc = byte;
+                    state = PARSE_LEN_L;
+                    break;
+                    
+                case PARSE_LEN_L:
+                    data_len = byte;
+                    checksum_calc ^= byte;
+                    state = PARSE_LEN_H;
+                    break;
+                    
+                case PARSE_LEN_H:
+                    data_len |= (byte << 8);
+                    checksum_calc ^= byte;
+                    data_idx = 0;
+                    if (data_len > 0 && data_len <= FRAME_MAX_DATA_SIZE) {
+                        state = PARSE_DATA;
+                    } else if (data_len == 0) {
+                        state = PARSE_CHECKSUM;
+                    } else {
+                        ESP_LOGW(TAG, "数据长度无效: %d", data_len);
+                        state = PARSE_HEADER_0;
+                    }
+                    break;
+                    
+                case PARSE_DATA:
+                    frame_data[data_idx++] = byte;
+                    checksum_calc ^= byte;
+                    if (data_idx >= data_len) {
+                        state = PARSE_CHECKSUM;
+                    }
+                    break;
+                    
+                case PARSE_CHECKSUM:
+                    if (byte == checksum_calc) {
+                        process_frame(cmd, frame_data, data_len);
+                    } else {
+                        ESP_LOGW(TAG, "校验和错误: 期望0x%02X, 收到0x%02X", checksum_calc, byte);
+                    }
                     state = PARSE_HEADER_0;
-                }
-                break;
-                
-            case PARSE_CMD:
-                cmd = byte;
-                checksum_calc = byte;
-                state = PARSE_LEN_L;
-                break;
-                
-            case PARSE_LEN_L:
-                data_len = byte;
-                checksum_calc ^= byte;
-                state = PARSE_LEN_H;
-                break;
-                
-            case PARSE_LEN_H:
-                data_len |= (byte << 8);
-                checksum_calc ^= byte;
-                data_idx = 0;
-                if (data_len > 0 && data_len <= FRAME_MAX_DATA_SIZE) {
-                    state = PARSE_DATA;
-                } else if (data_len == 0) {
-                    state = PARSE_CHECKSUM;
-                } else {
-                    ESP_LOGW(TAG, "数据长度无效: %d", data_len);
-                    state = PARSE_HEADER_0;
-                }
-                break;
-                
-            case PARSE_DATA:
-                frame_data[data_idx++] = byte;
-                checksum_calc ^= byte;
-                if (data_idx >= data_len) {
-                    state = PARSE_CHECKSUM;
-                }
-                break;
-                
-            case PARSE_CHECKSUM:
-                if (byte == checksum_calc) {
-                    process_frame(cmd, frame_data, data_len);
-                } else {
-                    ESP_LOGW(TAG, "校验和错误: 期望0x%02X, 收到0x%02X", checksum_calc, byte);
-                }
-                state = PARSE_HEADER_0;
-                break;
+                    break;
+            }
         }
     }
     

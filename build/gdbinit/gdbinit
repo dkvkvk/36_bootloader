@@ -1,0 +1,2 @@
+source D:/Code/36_bootloader/build/gdbinit/symbols
+source D:/Code/36_bootloader/build/gdbinit/connect

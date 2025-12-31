@@ -66,7 +66,7 @@ idf.py set-target esp32s3
 cd d:\Code\36_bootloader
 idf.py fullclean
 idf.py build
-idf.py -p COM7 flash monitor
+idf.py -p COM11 flash monitor
 ```
 
 ### 2. PC 端工具
@@ -88,7 +88,7 @@ python tools/audio_tool.py COM9 record -d 10 -o output.wav
 python tools/audio_tool.py COM9 play audio.wav
 
 # 播放 MP3 文件 (ESP32 硬件解码)
-python tools/audio_tool.py COM9 play music.mp3
+python tools/audio_tool.py COM9 play input.mp3
 
 # 握手测试
 python tools/audio_tool.py COM9 handshake

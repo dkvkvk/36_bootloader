@@ -308,17 +308,20 @@ class AudioSerialTool:
         time.sleep(0.5)
         
         # 分包发送音频数据
-        # MP3 数据使用更大的包大小以提高效率
-        chunk_size = 1024 if audio_format == AUDIO_FORMAT_MP3 else 512
+        # 使用较小的包大小和更长的间隔以提高可靠性
+        chunk_size = 512  # 统一使用 512 字节包大小
         total_chunks = (len(frames) + chunk_size - 1) // chunk_size
         
-        print(f"发送音频数据...")
+        # MP3 需要更长的等待时间，因为 ESP32 需要解码
+        # 约 50ms 足够 ESP32 解码一个 MP3 帧并写入 I2S
+        delay = 0.05 if audio_format == AUDIO_FORMAT_MP3 else 0.03
+        
+        print(f"发送音频数据... (包大小: {chunk_size}, 间隔: {int(delay*1000)}ms)")
         for i in range(0, len(frames), chunk_size):
             chunk = frames[i:i+chunk_size]
             self.send_frame(CMD_AUDIO_DATA, chunk)
             print(f"\r进度: {i // chunk_size + 1}/{total_chunks}", end='', flush=True)
-            # MP3 数据需要更快的发送速率以保证输入缓冲区
-            time.sleep(0.01 if audio_format == AUDIO_FORMAT_MP3 else 0.02)
+            time.sleep(delay)
         
         print("\n发送完成")
         
